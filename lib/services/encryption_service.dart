@@ -53,6 +53,18 @@ class EncryptionService {
         '[EncryptionService] Public key modulus length: ${publicKey.modulus!.bitLength} bits',
       );
 
+      // DEBUG: Show generated keys
+      print('═══════════════════════════════════════════════════════════');
+      print('🔑 DEBUG: RSA-2048 KEY PAIR GENERATED');
+      print('═══════════════════════════════════════════════════════════');
+      print('📤 PUBLIC KEY (share with others):');
+      print(publicKeyPEM);
+      print('───────────────────────────────────────────────────────────');
+      print('🔐 PRIVATE KEY (keep secret!):');
+      print('${privateKeyPEM.substring(0, 100)}...[truncated for security]');
+      print('Private key length: ${privateKeyPEM.length} characters');
+      print('═══════════════════════════════════════════════════════════\n');
+
       return {'publicKey': publicKeyPEM, 'privateKey': privateKeyPEM};
     } catch (e) {
       print('[EncryptionService] ERROR generating RSA key pair: $e');
@@ -136,6 +148,20 @@ class EncryptionService {
       final keyBase64 = base64.encode(keyBytes);
 
       print('[EncryptionService] AES-256 key generated successfully');
+
+      // DEBUG: Show generated AES key
+      print('═══════════════════════════════════════════════════════════');
+      print('🔑 DEBUG: AES-256 SESSION KEY GENERATED');
+      print('═══════════════════════════════════════════════════════════');
+      print('Key (Base64): $keyBase64');
+      print(
+        'Key (Hex): ${keyBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('')}',
+      );
+      print(
+        'Key length: ${keyBytes.length} bytes (${keyBytes.length * 8} bits)',
+      );
+      print('═══════════════════════════════════════════════════════════\n');
+
       return keyBase64;
     } catch (e) {
       print('[EncryptionService] ERROR generating AES key: $e');
@@ -187,6 +213,20 @@ class EncryptionService {
         '[EncryptionService] Ciphertext length: ${ciphertext.length} bytes',
       );
 
+      // DEBUG: Show encryption details
+      print('═══════════════════════════════════════════════════════════');
+      print('🔐 DEBUG: AES-256-CBC ENCRYPTION');
+      print('═══════════════════════════════════════════════════════════');
+      print('📝 Plaintext: "$plaintext"');
+      print('🔑 AES Key (Base64): $aesKeyBase64');
+      print('🎲 IV (Base64): $ivBase64');
+      print('🔒 Ciphertext (Base64): $ciphertextBase64');
+      print('───────────────────────────────────────────────────────────');
+      print('Plaintext length: ${plaintext.length} characters');
+      print('Ciphertext length: ${ciphertext.length} bytes');
+      print('IV length: ${iv.length} bytes (${iv.length * 8} bits)');
+      print('═══════════════════════════════════════════════════════════\n');
+
       return {'ciphertext': ciphertextBase64, 'iv': ivBase64};
     } catch (e) {
       print('[EncryptionService] ERROR encrypting with AES: $e');
@@ -235,6 +275,19 @@ class EncryptionService {
         '[EncryptionService] Decrypted message length: ${plaintext.length} chars',
       );
 
+      // DEBUG: Show decryption details
+      print('═══════════════════════════════════════════════════════════');
+      print('🔓 DEBUG: AES-256-CBC DECRYPTION');
+      print('═══════════════════════════════════════════════════════════');
+      print('🔒 Ciphertext (Base64): $ciphertextBase64');
+      print('🔑 AES Key (Base64): $aesKeyBase64');
+      print('🎲 IV (Base64): $ivBase64');
+      print('📝 Decrypted Plaintext: "$plaintext"');
+      print('───────────────────────────────────────────────────────────');
+      print('Ciphertext length: ${ciphertext.length} bytes');
+      print('Decrypted length: ${plaintext.length} characters');
+      print('═══════════════════════════════════════════════════════════\n');
+
       return plaintext;
     } catch (e) {
       print('[EncryptionService] ERROR decrypting with AES: $e');
@@ -271,6 +324,20 @@ class EncryptionService {
       final signatureBase64 = base64.encode(signature.bytes);
 
       print('[EncryptionService] Message signed successfully');
+
+      // DEBUG: Show signature details
+      print('═══════════════════════════════════════════════════════════');
+      print('✍️  DEBUG: RSA DIGITAL SIGNATURE');
+      print('═══════════════════════════════════════════════════════════');
+      print('📝 Message: "$message"');
+      print('🔐 Message Hash (SHA-256): ${base64.encode(hash)}');
+      print('✍️  Signature (Base64): $signatureBase64');
+      print('───────────────────────────────────────────────────────────');
+      print('Message length: ${message.length} characters');
+      print('Hash length: ${hash.length} bytes (${hash.length * 8} bits)');
+      print('Signature length: ${signature.bytes.length} bytes');
+      print('═══════════════════════════════════════════════════════════\n');
+
       return signatureBase64;
     } catch (e) {
       print('[EncryptionService] ERROR signing message: $e');

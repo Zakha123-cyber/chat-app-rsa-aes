@@ -18,6 +18,7 @@ class StorageService {
   static const String _privateKeyKey = 'user_private_key';
   static const String _publicKeyKey = 'user_public_key';
   static const String _usernameKey = 'username';
+  static const String _mockReceiverPublicKeyKey = 'mock_receiver_public_key';
 
   // ============================================================================
   // PRIVATE KEY OPERATIONS
@@ -150,6 +151,50 @@ class StorageService {
       print('[StorageService] ✓ Public key deleted successfully');
     } catch (e) {
       print('[StorageService] ERROR deleting public key: $e');
+      rethrow;
+    }
+  }
+
+  /// Check apakah public key sudah tersimpan
+  Future<bool> hasPublicKey() async {
+    final publicKey = await loadPublicKey();
+    return publicKey != null;
+  }
+
+  // ============================================================================
+  // MOCK RECEIVER KEY OPERATIONS (For Demo)
+  // ============================================================================
+
+  /// Simpan mock receiver's public key (untuk demo)
+  Future<void> saveMockReceiverPublicKey(String publicKeyPEM) async {
+    try {
+      print('[StorageService] Saving mock receiver public key...');
+      await _secureStorage.write(
+        key: _mockReceiverPublicKeyKey,
+        value: publicKeyPEM,
+      );
+      print('[StorageService] ✓ Mock receiver public key saved');
+    } catch (e) {
+      print('[StorageService] ERROR saving mock receiver public key: $e');
+      rethrow;
+    }
+  }
+
+  /// Load mock receiver's public key (untuk demo)
+  Future<String?> loadMockReceiverPublicKey() async {
+    try {
+      print('[StorageService] Loading mock receiver public key...');
+      final publicKeyPEM = await _secureStorage.read(
+        key: _mockReceiverPublicKeyKey,
+      );
+      if (publicKeyPEM != null) {
+        print('[StorageService] ✓ Mock receiver public key loaded');
+      } else {
+        print('[StorageService] ⚠ Mock receiver public key not found');
+      }
+      return publicKeyPEM;
+    } catch (e) {
+      print('[StorageService] ERROR loading mock receiver public key: $e');
       rethrow;
     }
   }
