@@ -4,14 +4,17 @@ Implementasi kriptografi modern untuk aplikasi chat dengan enkripsi end-to-end m
 
 ## 📋 Overview
 
-Project ini adalah bagian dari tugas kuliah **Kriptografi Modern** yang mengimplementasikan sistem enkripsi end-to-end untuk aplikasi chat mobile menggunakan Flutter.
+Project ini adalah bagian dari tugas kuliah **Kriptografi Modern** yang mengimplementasikan sistem enkripsi end-to-end untuk aplikasi chat mobile menggunakan Flutter dengan Firebase backend.
 
 ### Tech Stack
 
 - **Frontend**: Flutter (Dart)
+- **Backend**: Firebase
+  - `firebase_core` ^3.8.1 - Firebase initialization
+  - `firebase_auth` ^5.3.3 - User authentication
+  - `cloud_firestore` ^5.5.2 - Real-time database
 - **Cryptography Libraries**:
   - `pointycastle` ^3.7.3 - RSA, AES, SHA-256
-  - `encrypt` ^5.0.3 - High-level encryption
   - `crypto` ^3.0.3 - Hash functions
   - `flutter_secure_storage` ^9.0.0 - Secure key storage
 
@@ -19,39 +22,57 @@ Project ini adalah bagian dari tugas kuliah **Kriptografi Modern** yang mengimpl
 
 ### 1. RSA-2048
 
-- **Key Generation**: Generate pasangan public/private key (2048-bit)
-- **Key Exchange**: Enkripsi AES session key dengan public key penerima
-- **Digital Signature**: Sign dan verify pesan untuk authenticity & integrity
+- **Key Generation**: Generate pasangan public/private key saat registrasi (2048-bit)
+- **Key Storage**: Public key disimpan di Firestore, private key di secure storage device
+- **Digital Signature**: Sign dan verify setiap pesan untuk authenticity & integrity
 
 ### 2. AES-256-CBC
 
 - **Message Encryption**: Enkripsi pesan chat dengan mode CBC
 - **Random IV**: Generate IV baru untuk setiap pesan (16 bytes)
-- **Session Key**: Random session key untuk setiap chat (32 bytes)
+- **Session Key**: Random session key untuk setiap chat session, disimpan lokal
+- **Automatic Key Exchange**: Session key di-generate otomatis saat pertama kali buka chat
 
 ### 3. SHA-256
 
 - **Message Hashing**: Hash pesan sebelum digital signature
-- **Password Hashing**: Hash password sebelum dikirim ke server
+- **Integrity Check**: Verify hash saat menerima pesan
 
-### 4. Secure Storage
+### 4. Firebase Integration
+
+- **Firebase Auth**: User authentication dengan email/password
+- **Firestore**: Real-time database untuk pesan terenkripsi
+- **Online Status**: Real-time presence detection
+- **Unread Badges**: Subcollection untuk unread message counting
+
+### 5. Secure Storage
 
 - **Private Key Storage**: Simpan private key terenkripsi di device
-- **Session Key Storage**: Cache session keys per chat
+- **Session Key Storage**: Cache session keys per chat di secure storage
 - **Hardware-backed**: Menggunakan Android Keystore / iOS Keychain
 
 ## 📁 Struktur File
 
 ```
 lib/
+├── main.dart                          # App entry point
+├── firebase_options.dart              # Firebase configuration
 ├── services/
-│   ├── encryption_service.dart    # Core cryptography operations
-│   └── storage_service.dart       # Secure storage management
-└── examples/
-    └── encryption_example.dart    # Full demo & usage examples
+│   ├── encryption_service.dart        # Core cryptography (RSA, AES, SHA-256)
+│   ├── storage_service.dart           # Secure storage management
+│   ├── chat_encryption_helper.dart    # High-level encryption helper
+│   └── firebase_database_service.dart # Firestore CRUD operations
+├── screens/
+│   ├── login_screen.dart              # Login & registration UI
+│   ├── contacts_screen.dart           # User list with unread badges
+│   └── chat_screen.dart               # E2E encrypted chat UI
+└── models/
+    └── (data models)
 
-test/
-└── encryption_test.dart           # Simplified test (no Flutter dependencies)
+firestore.rules                        # Firestore security rules
+README.md                              # Project documentation
+ENCRYPTION_README.md                   # This file
+FLOW_DIAGRAM.md                        # Complete encryption flow
 ```
 
 ## 🚀 Cara Menggunakan
@@ -91,114 +112,203 @@ final storageService = StorageService();
 ### Phase 1: Registrasi User
 
 ```dart
-// Generate RSA key pair
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+// 1. Register dengan Firebase Auth
+final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+  email: 'alice@example.com',
+  password: 'password123',
+);
+final userId = userCredential.user!.uid;
+
+// 2. Generate RSA key pair
 final keyPair = encryptionService.generateRSAKeyPair();
-final publicKey = keyPair['publicKey']!;   // Kirim ke server
+final publicKey = keyPair['publicKey']!;   // Simpan ke Firestore
 final privateKey = keyPair['privateKey']!; // Simpan di device
 
-// Save private key securely
+// 3. Save private key securely di device
 await storageService.savePrivateKey(privateKey, username: 'alice');
+await storageService.savePublicKey(publicKey);
+await storageService.saveUsername('alice');
 
-// Hash password
-final passwordHash = encryptionService.hashPassword('password123');
-// Kirim username, passwordHash, dan publicKey ke server
+// 4. Save public key dan user data ke Firestore
+await FirebaseFirestore.instance.collection('users').doc(userId).set({
+  'username': 'alice',
+  'email': 'alice@example.com',
+  'publicKey': publicKey,
+  'isOnline': true,
+  'lastSeen': FieldValue.serverTimestamp(),
+  'createdAt': FieldValue.serverTimestamp(),
+});
 ```
 
-### Phase 2: Key Exchange (Mulai Chat)
+### Phase 2: Key Exchange (Mulai Chat) - AUTOMATIC
+
+**Key exchange dilakukan otomatis saat pertama kali buka chat room:**
 
 ```dart
-// Alice: Generate session key
-final sessionKey = encryptionService.generateAESKey();
+// Dipanggil otomatis di chat_screen.dart saat initState
+Future<void> _initializeChat() async {
+  // 1. Generate session ID (consistent untuk kedua user)
+  final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+  final sessionId = _dbService.generateSessionId(currentUserId, receiverId);
 
-// Alice: Get Bob's public key dari server
-final bobPublicKey = await fetchPublicKeyFromServer('bob');
+  // 2. Check apakah sudah punya session key
+  final hasSession = await _chatHelper.hasSessionKey(sessionId);
 
-// Alice: Encrypt session key dengan Bob's public key
-final encryptedSessionKey = encryptionService.encryptRSA(
-  sessionKey,
-  bobPublicKey,
-);
+  if (!hasSession) {
+    // KEY EXCHANGE - Hanya terjadi sekali!
 
-// Alice: Send encrypted session key ke server
-await sendToServer(encryptedSessionKey);
+    // 3. Generate AES session key
+    final sessionKey = encryptionService.generateAESKey();
 
-// Alice: Save session key locally
-await storageService.saveSessionKey('alice_bob_chat', sessionKey);
+    // 4. Save session key locally (tidak perlu kirim ke server!)
+    await storageService.saveSessionKey(sessionId, sessionKey);
 
-// ===== Di sisi Bob =====
+    // 5. Create chat session metadata di Firestore
+    await FirebaseFirestore.instance.collection('chatSessions').add({
+      'sessionId': sessionId,
+      'participants': [currentUserId, receiverId],
+      'createdAt': FieldValue.serverTimestamp(),
+      'lastMessageAt': FieldValue.serverTimestamp(),
+    });
+  }
 
-// Bob: Load private key
-final bobPrivateKey = await storageService.loadPrivateKey();
-
-// Bob: Decrypt session key
-final decryptedSessionKey = encryptionService.decryptRSA(
-  encryptedSessionKey,
-  bobPrivateKey!,
-);
-
-// Bob: Save session key
-await storageService.saveSessionKey('alice_bob_chat', decryptedSessionKey);
+  // Session ready! Mulai encrypt/decrypt messages
+  setState(() => _isSessionReady = true);
+}
 ```
+
+**Catatan Penting:**
+
+- Session key **TIDAK dikirim** melalui network
+- Setiap user generate session key sendiri untuk chat mereka
+- Session key hanya disimpan di local device storage
+- Firestore hanya simpan metadata (sessionId, participants)
 
 ### Phase 3: Mengirim Pesan
 
 ```dart
-// Alice: Load session key
-final sessionKey = await storageService.loadSessionKey('alice_bob_chat');
+Future<void> _sendMessage() async {
+  final messageText = _messageController.text.trim();
 
-// Alice: Encrypt message
-final message = 'Hello Bob! This is a secret message.';
-final encrypted = encryptionService.encryptAES(message, sessionKey!);
-final ciphertext = encrypted['ciphertext']!;
-final iv = encrypted['iv']!;
+  // 1. Load session key dari local storage
+  final sessionKey = await storageService.loadSessionKey(sessionId);
 
-// Alice: Sign message
-final privateKey = await storageService.loadPrivateKey();
-final signature = encryptionService.signMessage(message, privateKey!);
+  // 2. Encrypt message dengan AES-256-CBC
+  final encrypted = encryptionService.encryptAES(messageText, sessionKey!);
+  final ciphertext = encrypted['ciphertext']!;
+  final iv = encrypted['iv']!;
 
-// Alice: Send to server
-await sendMessageToServer({
-  'ciphertext': ciphertext,
-  'iv': iv,
-  'signature': signature,
-  'sender': 'alice',
-  'receiver': 'bob',
-});
+  // 3. Sign message dengan RSA private key
+  final privateKey = await storageService.loadPrivateKey();
+  final signature = encryptionService.signMessage(messageText, privateKey!);
+
+  // 4. Send encrypted message ke Firestore
+  await FirebaseFirestore.instance.collection('messages').add({
+    'sessionId': sessionId,
+    'senderId': FirebaseAuth.instance.currentUser!.uid,
+    'receiverId': receiverId,
+    'ciphertext': ciphertext,
+    'iv': iv,
+    'signature': signature,
+    'timestamp': FieldValue.serverTimestamp(),
+    'isDelivered': false,
+    'isRead': false,
+  });
+
+  // 5. Increment unread count untuk receiver (subcollection)
+  await FirebaseFirestore.instance
+    .collection('users')
+    .doc(receiverId)
+    .collection('unreadCounts')
+    .doc(senderId)
+    .set({
+      'count': FieldValue.increment(1),
+      'sessionId': sessionId,
+      'lastMessageAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+}
 ```
 
-### Phase 4: Menerima Pesan
+### Phase 4: Menerima Pesan (Real-time Stream)
 
 ```dart
-// Bob: Receive message dari server
-final receivedMessage = await receiveMessageFromServer();
+// Setup real-time listener di chat_screen.dart
+StreamBuilder<QuerySnapshot>(
+  stream: FirebaseFirestore.instance
+    .collection('messages')
+    .where('sessionId', isEqualTo: sessionId)
+    .orderBy('timestamp', descending: false)
+    .snapshots(),
+  builder: (context, snapshot) {
+    if (!snapshot.hasData) return CircularProgressIndicator();
 
-// Bob: Load session key
-final sessionKey = await storageService.loadSessionKey('alice_bob_chat');
+    // Decrypt setiap message
+    final messages = snapshot.data!.docs.map((doc) {
+      return _decryptMessage(doc.id, doc.data() as Map<String, dynamic>);
+    }).toList();
 
-// Bob: Decrypt message
-final plaintext = encryptionService.decryptAES(
-  receivedMessage['ciphertext'],
-  sessionKey!,
-  receivedMessage['iv'],
-);
+    return ListView.builder(
+      itemCount: messages.length,
+      itemBuilder: (context, index) => _buildMessageBubble(messages[index]),
+    );
+  },
+)
 
-// Bob: Get Alice's public key dari server
-final alicePublicKey = await fetchPublicKeyFromServer('alice');
+// Decrypt function
+Future<ChatMessage> _decryptMessage(String messageId, Map<String, dynamic> data) async {
+  final senderId = data['senderId'] as String;
+  final isSentByMe = senderId == FirebaseAuth.instance.currentUser!.uid;
 
-// Bob: Verify signature
-final isValid = encryptionService.verifySignature(
-  plaintext,
-  receivedMessage['signature'],
-  alicePublicKey,
-);
+  // 1. Load session key
+  final sessionKey = await storageService.loadSessionKey(sessionId);
 
-if (isValid) {
-  // ✓ Message is authentic and not tampered
-  displayMessage(plaintext);
-} else {
-  // ✗ Warning: Message may be forged or tampered!
-  showWarning('Message verification failed!');
+  // 2. Decrypt message
+  final plaintext = encryptionService.decryptAES(
+    data['ciphertext'],
+    sessionKey!,
+    data['iv'],
+  );
+
+  // 3. Get sender's public key dari Firestore
+  final senderDoc = await FirebaseFirestore.instance
+    .collection('users')
+    .doc(senderId)
+    .get();
+  final senderPublicKey = senderDoc.data()!['publicKey'] as String;
+
+  // 4. Verify signature
+  final isValid = encryptionService.verifySignature(
+    plaintext,
+    data['signature'],
+    senderPublicKey,
+  );
+
+  // 5. Mark as delivered (jika belum)
+  if (!isSentByMe && data['isDelivered'] == false) {
+    await FirebaseFirestore.instance
+      .collection('messages')
+      .doc(messageId)
+      .update({'isDelivered': true});
+  }
+
+  return ChatMessage(
+    message: plaintext,
+    isSentByMe: isSentByMe,
+    isVerified: isValid,  // Show warning icon jika false!
+    timestamp: (data['timestamp'] as Timestamp).toDate(),
+  );
 }
+
+// Reset unread count saat buka chat
+await FirebaseFirestore.instance
+  .collection('users')
+  .doc(currentUserId)
+  .collection('unreadCounts')
+  .doc(senderId)
+  .delete();
 ```
 
 ## 🔧 API Reference
@@ -404,28 +514,45 @@ Print semua keys yang tersimpan (untuk debugging).
 
 ### Private Key Management
 
-- **NEVER** send private key to server
-- **NEVER** share private key with anyone
-- **ALWAYS** store encrypted in secure storage
-- **CONSIDER** adding password-based encryption layer
+- ✅ **NEVER** send private key to Firestore atau network
+- ✅ **NEVER** share private key with anyone
+- ✅ **ALWAYS** store encrypted in secure storage (flutter_secure_storage)
+- ✅ Private key hanya ada di device user
 
 ### Session Key Management
 
-- Generate new session key per chat session
-- Consider rotating session keys periodically
-- Clear old session keys when chat ends
+- ✅ Generate new session key saat pertama kali buka chat
+- ✅ Session key disimpan lokal, **TIDAK** dikirim melalui Firestore
+- ✅ Setiap chat session punya session key sendiri
+- ⚠️ Clear session keys saat logout
 
 ### IV (Initialization Vector)
 
-- **MUST** use random IV for each message
-- **NEVER** reuse IV with same key
-- Send IV along with ciphertext (IV is public, not secret)
+- ✅ **MUST** use random IV for each message (16 bytes)
+- ✅ **NEVER** reuse IV with same key
+- ✅ IV dikirim bersama ciphertext di Firestore (IV is public, not secret)
+- ✅ Generate IV baru otomatis setiap kali encryptAES()
 
 ### Digital Signature
 
-- **ALWAYS** verify signature before displaying message
-- **SHOW WARNING** jika signature invalid
-- **LOG** failed signature attempts (possible attack)
+- ✅ **ALWAYS** verify signature before displaying message
+- ✅ **SHOW WARNING** icon jika signature invalid (tampil di UI)
+- ✅ Signature verify dengan public key dari Firestore
+- ⚠️ Log failed verification (possible tampering atau attack)
+
+### Firestore Security Rules
+
+- ✅ Authenticated users only dapat read/write
+- ✅ Users hanya bisa read pesan di chat mereka sendiri
+- ✅ Validate sender ID matches authenticated user
+- ✅ Prevent unauthorized access ke private data
+
+### Real-time Security
+
+- ✅ Firestore streams provide real-time updates
+- ✅ Decrypt on-device saat message diterima
+- ✅ Firestore hanya simpan encrypted data
+- ✅ Zero-knowledge: Server tidak bisa decrypt
 
 ## 🧪 Testing
 

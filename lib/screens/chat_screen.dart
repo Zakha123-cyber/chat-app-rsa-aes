@@ -58,57 +58,92 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Future<void> _initializeChat() async {
     try {
+      print('[ChatScreen] ========================================');
       print('[ChatScreen] Initializing chat session...');
+      print('[ChatScreen] Receiver ID: ${widget.receiverId}');
+      print('[ChatScreen] Receiver Name: ${widget.receiverName}');
 
       // Get our public key from local storage
+      print('[ChatScreen] Step 1: Loading public key from storage...');
       _myPublicKey = await _chatHelper.getCachedPublicKey();
       if (_myPublicKey == null) {
         throw Exception(
           'Your keys not found. Please go back and register again.',
         );
       }
+      print('[ChatScreen] ✓ Public key loaded');
 
       // Generate session ID (consistent for both users)
+      print('[ChatScreen] Step 2: Getting current user ID...');
       final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+      print('[ChatScreen] Current User ID: $currentUserId');
+
+      print('[ChatScreen] Step 3: Generating session ID...');
       _sessionId = _dbService.generateSessionId(
         currentUserId,
         widget.receiverId,
       );
-
       print('[ChatScreen] Session ID: $_sessionId');
-      print('[ChatScreen] Receiver: ${widget.receiverName}');
 
       // Check if we already have a session key
+      print('[ChatScreen] Step 4: Checking for existing session key...');
       final hasSession = await _chatHelper.hasSessionKey(_sessionId);
+      print('[ChatScreen] Has session key: $hasSession');
 
       if (!hasSession) {
         // KEY EXCHANGE PROTOCOL
-        print('[ChatScreen] No session key found, starting key exchange...');
+        print('[ChatScreen] Step 5a: Starting new key exchange...');
 
         // Generate AES session key and encrypt it with receiver's RSA public key
+        print('[ChatScreen] - Generating AES session key...');
         await _chatHelper.startChatSession(
           chatId: _sessionId,
           receiverPublicKey: widget.receiverPublicKey,
         );
+        print('[ChatScreen] ✓ Session key generated');
 
         // Store session metadata in Firestore (actual encrypted key is stored locally)
-        // In a production app, you'd encrypt the AES key with receiver's public key and store it
+        print('[ChatScreen] - Creating chat session in Firestore...');
         await _dbService.createChatSession(
           receiverId: widget.receiverId,
           encryptedSessionKey:
               'session_key_encrypted_$_sessionId', // Placeholder for now
         );
+        print('[ChatScreen] ✓ Chat session created in Firestore');
 
         print('[ChatScreen] ✓ Key exchange completed');
       } else {
-        print('[ChatScreen] ✓ Session key already exists');
+        print('[ChatScreen] Step 5b: Session key already exists');
       }
 
+      // Reset unread count from this sender (best effort - don't fail if error)
+      print('[ChatScreen] Step 6: Resetting unread count...');
+      try {
+        await _dbService.resetUnreadCount(widget.receiverId);
+        print('[ChatScreen] ✓ Unread count reset');
+      } catch (e) {
+        print('[ChatScreen] Warning: Could not reset unread count: $e');
+      }
+
+      // Mark all messages as read (best effort - don't fail if error)
+      print('[ChatScreen] Step 7: Marking messages as read...');
+      try {
+        await _dbService.markAllMessagesAsRead(_sessionId);
+        print('[ChatScreen] ✓ Messages marked as read');
+      } catch (e) {
+        print('[ChatScreen] Warning: Could not mark messages as read: $e');
+      }
+
+      print('[ChatScreen] Step 8: Setting session ready...');
       setState(() => _isSessionReady = true);
 
       print('[ChatScreen] ✓ Chat initialized successfully');
+      print('[ChatScreen] ========================================');
     } catch (e) {
+      print('[ChatScreen] ========================================');
       print('[ChatScreen] ✗ Failed to initialize chat: $e');
+      print('[ChatScreen] Error type: ${e.runtimeType}');
+      print('[ChatScreen] ========================================');
       setState(() {
         _isSessionReady = false;
       });

@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function: Check if user is the owner
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // ============================================================================
+    // USERS COLLECTION
+    // ============================================================================
+    match /users/{userId} {
+      // Anyone authenticated can read user profiles (for contacts list)
+      allow read: if isAuthenticated();
+      
+      // Users can only create/update their own profile
+      allow create: if isOwner(userId) 
+                    && request.resource.data.keys().hasAll(['uid', 'username', 'publicKey', 'isOnline'])
+                    && request.resource.data.uid == userId;
+      
+      allow update: if isOwner(userId)
+                    && request.resource.data.uid == userId;
+      
+      // Users can delete their own profile
+      allow delete: if isOwner(userId);
+      
+      // ============================================================================
+      // UNREAD COUNTS SUBCOLLECTION (for notification badges)
+      // ============================================================================
+      match /unreadCounts/{senderId} {
+        // Users can read their own unread counts
+        allow read: if isOwner(userId);
+        
+        // Sender can increment count, receiver can reset (delete)
+        allow create, update: if isAuthenticated() 
+                              && (request.auth.uid == senderId || request.auth.uid == userId);
+        
+        allow delete: if isOwner(userId);
+      }
+    }
+    
+    // ============================================================================
+    // MESSAGES COLLECTION
+    // ============================================================================
+    match /messages/{messageId} {
+      // Users can read messages where they are sender or receiver
+      allow read: if isAuthenticated() 
+                  && (resource.data.senderId == request.auth.uid 
+                      || resource.data.receiverId == request.auth.uid);
+      
+      // Users can only send messages as themselves
+      allow create: if isAuthenticated()
+                    && request.resource.data.senderId == request.auth.uid
+                    && request.resource.data.keys().hasAll([
+                      'sessionId', 'senderId', 'receiverId', 
+                      'ciphertext', 'iv', 'signature', 
+                      'timestamp', 'isRead', 'isDelivered'
+                    ]);
+      
+      // Users can update message status (read/delivered) only if they are the receiver
+      allow update: if isAuthenticated()
+                    && resource.data.receiverId == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['isRead', 'isDelivered', 'readAt']);
+      
+      // No one can delete messages (for audit trail)
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // CHAT SESSIONS COLLECTION
+    // ============================================================================
+    match /chatSessions/{sessionId} {
+      // Users can read sessions where they are a participant
+      allow read: if isAuthenticated() 
+                  && request.auth.uid in resource.data.participants;
+      
+      // Users can create sessions where they are a participant
+      allow create: if isAuthenticated()
+                    && request.auth.uid in request.resource.data.participants
+                    && request.resource.data.keys().hasAll([
+                      'sessionId', 'participants', 'encryptedSessionKey', 'createdAt'
+                    ]);
+      
+      // Users can update session's lastMessageAt if they are participants
+      allow update: if isAuthenticated()
+                    && request.auth.uid in resource.data.participants
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['lastMessageAt']);
+      
+      // No one can delete sessions
+      allow delete: if false;
+    }
+    
+    // ============================================================================
+    // DENY ALL OTHER COLLECTIONS
+    // ============================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

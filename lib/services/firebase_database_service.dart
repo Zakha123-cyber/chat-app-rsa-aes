@@ -171,6 +171,9 @@ class FirebaseDatabaseService {
         'lastMessageAt': FieldValue.serverTimestamp(),
       });
 
+      // Increment unread count for receiver
+      await _incrementUnreadCount(receiverId, currentUserId, sessionId);
+
       print('[FirebaseDB] ✓ Message sent successfully');
     } catch (e) {
       print('[FirebaseDB] ✗ Error sending message: $e');
@@ -315,6 +318,123 @@ class FirebaseDatabaseService {
       print('[FirebaseDB] Deleted ${snapshot.docs.length} old messages');
     } catch (e) {
       print('[FirebaseDB] Error deleting old messages: $e');
+    }
+  }
+
+  // ============================================================================
+  // UNREAD COUNT OPERATIONS (for notification badges)
+  // ============================================================================
+
+  /// Increment unread count for receiver
+  Future<void> _incrementUnreadCount(
+    String receiverId,
+    String senderId,
+    String sessionId,
+  ) async {
+    try {
+      // Get or create unreadCounts document for receiver
+      final unreadDoc = _usersCollection
+          .doc(receiverId)
+          .collection('unreadCounts')
+          .doc(senderId);
+
+      await unreadDoc.set({
+        'count': FieldValue.increment(1),
+        'sessionId': sessionId,
+        'lastMessageAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      print('[FirebaseDB] ✓ Unread count incremented for $receiverId');
+    } catch (e) {
+      print('[FirebaseDB] Error incrementing unread count: $e');
+    }
+  }
+
+  /// Get unread count from a specific user
+  Future<int> getUnreadCount(String fromUserId) async {
+    try {
+      final currentUserId = _authService.currentUserId;
+      if (currentUserId == null) return 0;
+
+      final doc = await _usersCollection
+          .doc(currentUserId)
+          .collection('unreadCounts')
+          .doc(fromUserId)
+          .get();
+
+      if (!doc.exists) return 0;
+
+      final data = doc.data() as Map<String, dynamic>?;
+      return (data?['count'] as int?) ?? 0;
+    } catch (e) {
+      print('[FirebaseDB] Error getting unread count: $e');
+      return 0;
+    }
+  }
+
+  /// Get stream of unread count from a specific user (real-time)
+  Stream<int> getUnreadCountStream(String fromUserId) {
+    final currentUserId = _authService.currentUserId;
+    if (currentUserId == null) {
+      return Stream.value(0);
+    }
+
+    return _usersCollection
+        .doc(currentUserId)
+        .collection('unreadCounts')
+        .doc(fromUserId)
+        .snapshots()
+        .map((doc) {
+          if (!doc.exists) return 0;
+          final data = doc.data() as Map<String, dynamic>?;
+          return (data?['count'] as int?) ?? 0;
+        });
+  }
+
+  /// Reset unread count when user opens chat
+  Future<void> resetUnreadCount(String fromUserId) async {
+    try {
+      final currentUserId = _authService.currentUserId;
+      if (currentUserId == null) return;
+
+      await _usersCollection
+          .doc(currentUserId)
+          .collection('unreadCounts')
+          .doc(fromUserId)
+          .delete();
+
+      print('[FirebaseDB] ✓ Unread count reset for messages from $fromUserId');
+    } catch (e) {
+      print('[FirebaseDB] Error resetting unread count: $e');
+    }
+  }
+
+  /// Mark all messages in a session as read
+  Future<void> markAllMessagesAsRead(String sessionId) async {
+    try {
+      final currentUserId = _authService.currentUserId;
+      if (currentUserId == null) return;
+
+      // Get all unread messages where current user is receiver
+      final snapshot = await _messagesCollection
+          .where('sessionId', isEqualTo: sessionId)
+          .where('receiverId', isEqualTo: currentUserId)
+          .where('isRead', isEqualTo: false)
+          .get();
+
+      // Batch update
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs) {
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      print('[FirebaseDB] ✓ Marked ${snapshot.docs.length} messages as read');
+    } catch (e) {
+      print('[FirebaseDB] Error marking messages as read: $e');
     }
   }
 }

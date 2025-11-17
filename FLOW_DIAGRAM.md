@@ -7,10 +7,10 @@
 │                         PHASE 1: REGISTRASI                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ALICE (Client)                                      SERVER
-    ──────────────                                    ──────────
+    ALICE (Client)                            FIREBASE (Backend)
+    ──────────────                            ──────────────────
          │
-         │  1. Input: username, password
+         │  1. Input: email, password, username
          │
          │  2. Generate RSA-2048 Key Pair
          │     ┌─────────────────────────┐
@@ -18,85 +18,120 @@
          │     │ Private Key (2048-bit)  │   │
          │     └─────────────────────────┘   │
          │                                    │
-         │  3. Save Private Key (Secure Storage)
+         │  3. Save Private Key (Secure Storage - LOCAL ONLY!)
          │     [flutter_secure_storage]      │
-         │     ✓ Encrypted at OS level       │
+         │     ✓ Encrypted by Android Keystore / iOS Keychain
+         │     ✓ NEVER leaves device         │
          │                                    │
-         │  4. Hash Password (SHA-256)       │
-         │     password → SHA-256 → hash     │
-         │                                    │
-         │  5. Send Registration Data        │
+         │  4. Register with Firebase Auth   │
          ├────────────────────────────────────>
+         │     email: "alice@example.com"    │
+         │     password: "password123"       │
+         │                                    │
+         │                           5. Firebase Auth
+         │                              Create User Account
+         │  6. Receive User ID (UID)         ✓ userId: "abc123..."
+         │<────────────────────────────────────
+         │     userId: "abc123..."           │
+         │                                    │
+         │  7. Send User Data + Public Key   │
+         ├────────────────────────────────────>
+         │     Firestore: /users/{userId}    │
          │     {                              │
          │       username: "alice",           │
-         │       password_hash: "13441c...",  │
-         │       public_key: "-----BEGIN..."  │
-         │     }                              │
-         │                                    │
-         │                            6. Store in DB
-         │                               ✓ public_key
-         │                               ✓ password_hash
-         │                               ✓ username
+         │       email: "alice@example.com",  │
+         │       publicKey: "-----BEGIN...",  │  8. Store in Firestore
+         │       isOnline: true,              │     /users collection
+         │       createdAt: timestamp         │     ✓ publicKey (PUBLIC)
+         │     }                              │     ✓ username
+         │                                    │     ✓ email
+         │                                    │     ✓ online status
          │
-    ✓ Registration Complete
+    ✓ Registration Complete (Private key ONLY on device)
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PHASE 2: KEY EXCHANGE (Start Chat)                        │
+│         PHASE 2: KEY EXCHANGE (Otomatis saat buka chat pertama kali)        │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ALICE (Initiator)                SERVER              BOB (Receiver)
-    ─────────────────               ────────             ──────────────
+    ALICE (Initiator)                FIREBASE FIRESTORE           BOB (Receiver)
+    ─────────────────               ──────────────────           ──────────────
          │
-         │  1. Generate AES-256 Session Key
+         │  1. Open chat with Bob
+         │     (tap user "Bob" di contacts)
+         │
+         │  2. Generate Session ID (deterministic)
+         │     sessionId = hash(sort([alice_id, bob_id]))
+         │     = "abc123_xyz789"
+         │
+         │  3. Check local storage
+         │     hasSessionKey("abc123_xyz789")?
+         │     → NO (first time chat)
+         │
+         │  4. Generate AES-256 Session Key
          │     [32 random bytes]
-         │     sessionKey = "rT8kP..."
+         │     sessionKey = "rT8kP2mN..."
          │
-         │  2. Request Bob's Public Key
+         │  5. Save Session Key LOCALLY
+         │     flutter_secure_storage.save(
+         │       "session_abc123_xyz789",
+         │       sessionKey
+         │     )
+         │     ✓ Stored on device
+         │     ✗ NOT sent to Firebase!
+         │
+         │  6. Create Chat Session Metadata
          ├────────────────────>
-         │                        3. Fetch from DB
-         │                           Bob's public_key
-         │  4. Receive Public Key
-         │<────────────────────
-         │     bob_public_key
-         │
-         │  5. Encrypt Session Key (RSA)
-         │     RSA_Encrypt(sessionKey, bob_public_key)
-         │     = encryptedSessionKey
-         │
-         │  6. Send Encrypted Session Key
-         ├────────────────────>
-         │   {                     7. Forward to Bob
-         │     chat_id: "alice_bob",  ├──────────────>
-         │     encrypted_key: "ahH..."  │
-         │   }                          │  8. Receive
-         │                              │     encrypted_key
-         │  9. Save Session Key         │
-         │     (Local Storage)          │  10. Load Private Key
-         │     ✓ Stored                 │      (Secure Storage)
+         │   Firestore: /chatSessions    7. Store metadata
+         │   {                               (NO session key!)
+         │     sessionId: "abc123_xyz789",   ✓ sessionId
+         │     participants: [alice_id, bob_id],  ✓ participants
+         │     createdAt: timestamp,         ✓ timestamps
+         │     lastMessageAt: timestamp
+         │   }                          │
          │                              │
-         │                              │  11. Decrypt Session Key (RSA)
-         │                              │      RSA_Decrypt(encrypted_key, bob_private_key)
-         │                              │      = sessionKey
-         │                              │
-         │                              │  12. Save Session Key
-         │                              │      (Local Storage)
-         │                              │      ✓ Stored
-         │
-    ✓ Both have same session key now!
+    ✓ Session ready (Alice)           │        [Bob opens chat later...]
+                                       │                    │
+                                       │                    │  8. Bob opens chat
+                                       │                    │     with Alice
+                                       │                    │
+                                       │                    │  9. Generate SAME Session ID
+                                       │                    │     (deterministic algorithm)
+                                       │                    │     = "abc123_xyz789"
+                                       │                    │
+                                       │                    │  10. Check local storage
+                                       │                    │      hasSessionKey?
+                                       │                    │      → NO
+                                       │                    │
+                                       │                    │  11. Generate AES-256 Key
+                                       │                    │      [32 random bytes]
+                                       │                    │      sessionKey = "pL9x..."
+                                       │                    │
+                                       │                    │  12. Save LOCALLY
+                                       │                    │      ✓ Stored on device
+                                       │                    │      ✗ NOT sent!
+                                       │                    │
+                                       │                    ✓ Session ready (Bob)
+
+    PENTING:
+    ✓ Setiap user punya session key SENDIRI di device masing-masing
+    ✓ Session keys BERBEDA antara Alice & Bob
+    ✓ Session keys TIDAK pernah dikirim melalui network
+    ✓ Messages di-encrypt dengan session key masing-masing user
+    ✓ Firestore hanya simpan ENCRYPTED messages, bukan session keys
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                       PHASE 3: SEND MESSAGE                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ALICE (Sender)                  SERVER              BOB (Receiver)
-    ──────────────                ────────             ──────────────
+    ALICE (Sender)              FIREBASE FIRESTORE          BOB (Receiver)
+    ──────────────            ────────────────────        ──────────────
          │
          │  1. User types message
          │     plaintext = "Hello Bob!"
          │
-         │  2. Load Session Key
+         │  2. Load Session Key (from local storage)
          │     sessionKey = "rT8kP..."
          │
          │  3. Generate Random IV (16 bytes)
@@ -104,79 +139,118 @@
          │
          │  4. Encrypt Message (AES-256-CBC)
          │     AES_Encrypt(plaintext, sessionKey, iv)
-         │     = ciphertext
+         │     = ciphertext = "cj7w..."
          │
-         │  5. Load Private Key
+         │  5. Load Private Key (from secure storage)
          │     alice_private_key
          │
          │  6. Hash Message (SHA-256)
-         │     hash = SHA256(plaintext)
+         │     hash = SHA256("Hello Bob!")
          │
-         │  7. Sign Hash (RSA)
+         │  7. Sign Hash (RSA Digital Signature)
          │     signature = RSA_Sign(hash, alice_private_key)
+         │     = "A0lA..."
          │
-         │  8. Send Encrypted Message
+         │  8. Send to Firestore
          ├────────────────────>
-         │   {                     9. Forward to Bob
-         │     ciphertext: "cj7w...",  ├──────────────>
-         │     iv: "3Xgds...",          │
-         │     signature: "A0lA...",    │
-         │     sender: "alice"          │
-         │   }                          │
-         │                              │
-    ✓ Message sent (encrypted)          │
-                                         │
-                                    (Server cannot decrypt!)
+         │   /messages collection       9. Store encrypted message
+         │   {                              ✓ ciphertext (encrypted!)
+         │     sessionId: "abc123_xyz789",  ✓ iv
+         │     senderId: alice_id,          ✓ signature
+         │     receiverId: bob_id,          ✓ metadata
+         │     ciphertext: "cj7w...",
+         │     iv: "3Xgds...",
+         │     signature: "A0lA...",
+         │     timestamp: serverTime,
+         │     isDelivered: false,
+         │     isRead: false
+         │   }                           │
+         │                               │
+         │  10. Update Unread Count      │
+         ├────────────────────>         │
+         │   /users/{bob_id}/unreadCounts/{alice_id}
+         │   {                           │
+         │     count: increment(1),      │
+         │     sessionId: "abc123...",   │
+         │     lastMessageAt: serverTime │
+         │   }                           │
+         │                               │
+    ✓ Message sent (encrypted)         │
+                                        │
+    ⚠️  Firestore CANNOT decrypt message!
+    ⚠️  Only Bob can decrypt with his session key
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      PHASE 4: RECEIVE MESSAGE                                │
+│              PHASE 4: RECEIVE MESSAGE (Real-time Stream)                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ALICE (Sender)                  SERVER              BOB (Receiver)
-    ──────────────                ────────             ──────────────
-                                                             │
-                                                             │  1. Receive Message
-                                                             │<────────────
-                                                             │   {
-                                                             │     ciphertext,
-                                                             │     iv,
-                                                             │     signature,
-                                                             │     sender: "alice"
-                                                             │   }
-                                                             │
-                                                             │  2. Load Session Key
-                                                             │     sessionKey
-                                                             │
-                                                             │  3. Decrypt Message (AES-256-CBC)
-                                                             │     AES_Decrypt(ciphertext, sessionKey, iv)
-                                                             │     = plaintext
-                                                             │     = "Hello Bob!"
-                                                             │
-                                                             │  4. Request Alice's Public Key
-                                                             ├────────────>
-                                                             │     sender: "alice"
-                                                        5. Send Public Key
-                                                             │<────────────
-                                                             │     alice_public_key
-                                                             │
-                                                             │  6. Hash Decrypted Message
-                                                             │     hash = SHA256(plaintext)
-                                                             │
-                                                             │  7. Verify Signature (RSA)
-                                                             │     RSA_Verify(hash, signature, alice_public_key)
-                                                             │     = true/false
-                                                             │
-                                                             │  8. Check Result
-                                                             │     if (valid) {
-                                                             │       ✓ Display: "Hello Bob!"
-                                                             │       ✓ Mark as verified
-                                                             │     } else {
-                                                             │       ✗ Show warning
-                                                             │       ✗ Message tampered!
-                                                             │     }
-                                                             │
-                                                        ✓ Message received & verified!
+    ALICE (Sender)            FIREBASE FIRESTORE          BOB (Receiver)
+    ──────────────          ────────────────────        ──────────────
+                                                               │
+                                                               │  1. Open Chat Screen
+                                                               │     Subscribe to real-time stream
+                                                               │
+                                                               │  StreamBuilder<QuerySnapshot>
+                                                               │  /messages
+                                                               │    .where(sessionId == "abc123...")
+                                                               │    .orderBy(timestamp)
+                                                               │    .snapshots() ← Real-time!
+                                                               │
+                                                          2. New Message Event!
+                                                               │<────────────────
+                                                               │   Document snapshot:
+                                                               │   {
+                                                               │     ciphertext: "cj7w...",
+                                                               │     iv: "3Xgds...",
+                                                               │     signature: "A0lA...",
+                                                               │     senderId: alice_id
+                                                               │   }
+                                                               │
+                                                               │  3. Load Session Key (local)
+                                                               │     sessionKey = "pL9x..."
+                                                               │
+                                                               │  4. Decrypt Message (AES-256-CBC)
+                                                               │     AES_Decrypt(ciphertext, sessionKey, iv)
+                                                               │     = plaintext = "Hello Bob!"
+                                                               │
+                                                               │  5. Get Alice's Public Key
+                                                               ├─────────────>
+                                                               │   Query: /users/{alice_id}
+                                                          6. Return public key
+                                                               │<─────────────
+                                                               │   { publicKey: "-----BEGIN..." }
+                                                               │
+                                                               │  7. Hash Decrypted Message
+                                                               │     hash = SHA256("Hello Bob!")
+                                                               │
+                                                               │  8. Verify Signature (RSA)
+                                                               │     RSA_Verify(hash, signature, alice_public_key)
+                                                               │     = true ✅
+                                                               │
+                                                               │  9. Display Message
+                                                               │     ✅ "Hello Bob!"
+                                                               │     ✅ Show verified checkmark icon
+                                                               │
+                                                               │  10. Mark as Delivered
+                                                               ├─────────────>
+                                                               │   /messages/{messageId}
+                                                               │   { isDelivered: true }
+                                                               │
+                                                               │  11. Reset Unread Count
+                                                               ├─────────────>
+                                                               │   /users/{bob_id}/unreadCounts/{alice_id}
+                                                               │   DELETE document
+                                                               │
+                                                          ✅ Message received, decrypted & verified!
+                                                          ✅ Badge hilang dari contacts screen
+
+
+    REAL-TIME UPDATES:
+    • Messages muncul instant tanpa refresh
+    • Firestore snapshots() provide live stream
+    • Decrypt on-the-fly saat message diterima
+    • UI auto-update dengan StreamBuilder
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -225,31 +299,55 @@
 │                         KEY STORAGE DIAGRAM                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ALICE's DEVICE                              SERVER DATABASE
-    ──────────────                            ─────────────────
+    ALICE's DEVICE                              FIREBASE FIRESTORE
+    ──────────────                            ──────────────────
 
-    Secure Storage                             Users Table
-    (flutter_secure_storage)                   ───────────
+    Secure Storage                             /users/{alice_id}
+    (flutter_secure_storage)                   ────────────────
     ┌──────────────────────┐                   ┌──────────────────────┐
     │ user_private_key     │                   │ username             │
-    │ [Encrypted by OS]    │                   │ password_hash        │
-    │ ✓ RSA-2048 Private   │                   │ public_key           │
-    │                      │                   │ created_at           │
-    │ user_public_key      │                   └──────────────────────┘
-    │ [Cached]             │
-    │ ✓ RSA-2048 Public    │                   Messages Table
-    │                      │                   ──────────────
-    │ username             │                   ┌──────────────────────┐
-    │ alice                │                   │ chat_id              │
-    │                      │                   │ sender               │
-    │ session_key_*        │                   │ ciphertext           │
-    │ [Per Chat]           │                   │ iv                   │
-    │ ✓ AES-256 Keys       │                   │ signature            │
+    │ [Encrypted by OS]    │                   │ email                │
+    │ ✓ RSA-2048 Private   │                   │ publicKey            │
+    │ ✗ NEVER synced!      │                   │ isOnline             │
+    │                      │                   │ lastSeen             │
+    │ user_public_key      │                   │ createdAt            │
+    │ [Cached]             │                   └──────────────────────┘
+    │ ✓ RSA-2048 Public    │
+    │                      │                   /messages/{messageId}
+    │ username             │                   ───────────────────────
+    │ alice                │                   ┌──────────────────────┐
+    │                      │                   │ sessionId            │
+    │ session_key_abc123   │                   │ senderId             │
+    │ [Per Chat]           │                   │ receiverId           │
+    │ ✓ AES-256 Keys       │                   │ ciphertext ← ENCRYPTED!
+    │ ✗ NEVER synced!      │                   │ iv                   │
+    │                      │                   │ signature            │
     └──────────────────────┘                   │ timestamp            │
-                                               └──────────────────────┘
-    ✓ Private keys NEVER leave device!
-    ✓ Server stores only encrypted data!          ✓ Server cannot decrypt!
-    ✓ Hardware-backed encryption!                 ✓ Zero-knowledge!
+                                               │ isDelivered          │
+    ✅ Private keys stored locally             │ isRead               │
+    ✅ Hardware-backed encryption              └──────────────────────┘
+    ✅ Android Keystore / iOS Keychain
+    ✅ Biometric protection available          /users/{bob_id}/unreadCounts/{alice_id}
+    ⛔ NEVER leaves device!                    ──────────────────────────────────────
+                                               ┌──────────────────────┐
+                                               │ count                │
+                                               │ sessionId            │
+    BOB's DEVICE (Similar Structure)           │ lastMessageAt        │
+    ────────────────────────────               └──────────────────────┘
+    Secure Storage
+    ┌──────────────────────┐                   /chatSessions/{sessionId}
+    │ bob_private_key      │                   ────────────────────────
+    │ bob_public_key       │                   ┌──────────────────────┐
+    │ session_key_abc123   │                   │ sessionId            │
+    │ (DIFFERENT key!)     │                   │ participants[]       │
+    └──────────────────────┘                   │ createdAt            │
+                                               │ lastMessageAt        │
+    ⚠️  Alice & Bob have DIFFERENT              └──────────────────────┘
+        session keys in their devices!
+    ⚠️  Both can decrypt messages because        ✅ Firestore: Zero-knowledge storage
+        they use their own keys                  ✅ Cannot decrypt messages
+    ✅ End-to-End Encryption maintained!         ✅ Only stores encrypted data
+                                                 ✅ Real-time sync & streams
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐

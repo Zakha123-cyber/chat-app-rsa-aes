@@ -226,9 +226,36 @@ class _ContactsScreenState extends State<ContactsScreen> {
                             ),
                           ],
                         ),
-                        trailing: Icon(
-                          Icons.chat_bubble_outline,
-                          color: Theme.of(context).colorScheme.primary,
+                        trailing: StreamBuilder<int>(
+                          stream: _dbService.getUnreadCountStream(user['uid']),
+                          builder: (context, snapshot) {
+                            final unreadCount = snapshot.data ?? 0;
+
+                            if (unreadCount > 0) {
+                              return Badge(
+                                label: Text(
+                                  unreadCount > 99
+                                      ? '99+'
+                                      : unreadCount.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                backgroundColor: Colors.red,
+                                child: Icon(
+                                  Icons.chat_bubble,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 28,
+                                ),
+                              );
+                            }
+
+                            return Icon(
+                              Icons.chat_bubble_outline,
+                              color: Theme.of(context).colorScheme.primary,
+                            );
+                          },
                         ),
                         onTap: () => _openChat(context, user),
                       ),

@@ -54,16 +54,42 @@ class EncryptionService {
       );
 
       // DEBUG: Show generated keys
-      print('═══════════════════════════════════════════════════════════');
-      print('🔑 DEBUG: RSA-2048 KEY PAIR GENERATED');
-      print('═══════════════════════════════════════════════════════════');
-      print('📤 PUBLIC KEY (share with others):');
-      print(publicKeyPEM);
-      print('───────────────────────────────────────────────────────────');
-      print('🔐 PRIVATE KEY (keep secret!):');
-      print('${privateKeyPEM.substring(0, 100)}...[truncated for security]');
-      print('Private key length: ${privateKeyPEM.length} characters');
-      print('═══════════════════════════════════════════════════════════\n');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         🔑  RSA-2048 KEY PAIR GENERATION                         ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  ✓ Key Size        : 2048 bits');
+      print('  ✓ Public Exponent : 65537');
+      print('  ✓ Modulus Length  : ${publicKey.modulus!.bitLength} bits');
+      print('\n  📤 PUBLIC KEY (share with others):');
+      print(
+        '  ┌─────────────────────────────────────────────────────────────┐',
+      );
+      print('  │ ${publicKeyPEM.split('\n')[0]}');
+      print('  │ ${publicKeyPEM.split('\n')[1].substring(0, 60)}...');
+      print('  │ ... [${publicKeyPEM.length} characters total]');
+      print('  │ ${publicKeyPEM.split('\n').last}');
+      print(
+        '  └─────────────────────────────────────────────────────────────┘',
+      );
+      print('\n  🔐 PRIVATE KEY (keep secret):');
+      print(
+        '  ┌─────────────────────────────────────────────────────────────┐',
+      );
+      print('  │ ${privateKeyPEM.split('\n')[0]}');
+      print('  │ [ENCRYPTED - ${privateKeyPEM.length} characters]');
+      print('  │ ${privateKeyPEM.split('\n').last}');
+      print(
+        '  └─────────────────────────────────────────────────────────────┘',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return {'publicKey': publicKeyPEM, 'privateKey': privateKeyPEM};
     } catch (e) {
@@ -150,17 +176,33 @@ class EncryptionService {
       print('[EncryptionService] AES-256 key generated successfully');
 
       // DEBUG: Show generated AES key
-      print('═══════════════════════════════════════════════════════════');
-      print('🔑 DEBUG: AES-256 SESSION KEY GENERATED');
-      print('═══════════════════════════════════════════════════════════');
-      print('Key (Base64): $keyBase64');
+      final keyHex = keyBytes
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join('');
       print(
-        'Key (Hex): ${keyBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join('')}',
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
       );
       print(
-        'Key length: ${keyBytes.length} bytes (${keyBytes.length * 8} bits)',
+        '║         🔑  AES-256 SESSION KEY GENERATION                       ║',
       );
-      print('═══════════════════════════════════════════════════════════\n');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  ✓ Algorithm       : AES-256-CBC');
+      print('  ✓ Key Size        : 256 bits (32 bytes)');
+      print('  ✓ Mode            : CBC (Cipher Block Chaining)');
+      print('\n  📊 Key Data:');
+      print('  ┌─────────────────────────────────────────────────────────┐');
+      print(
+        '  │ Base64: ${keyBase64.length > 40 ? keyBase64.substring(0, 40) + '...' : keyBase64}',
+      );
+      print(
+        '  │ Hex:    ${keyHex.length > 40 ? keyHex.substring(0, 40) + '...' : keyHex}',
+      );
+      print('  └─────────────────────────────────────────────────────────┘');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return keyBase64;
     } catch (e) {
@@ -214,18 +256,36 @@ class EncryptionService {
       );
 
       // DEBUG: Show encryption details
-      print('═══════════════════════════════════════════════════════════');
-      print('🔐 DEBUG: AES-256-CBC ENCRYPTION');
-      print('═══════════════════════════════════════════════════════════');
-      print('📝 Plaintext: "$plaintext"');
-      print('🔑 AES Key (Base64): $aesKeyBase64');
-      print('🎲 IV (Base64): $ivBase64');
-      print('🔒 Ciphertext (Base64): $ciphertextBase64');
-      print('───────────────────────────────────────────────────────────');
-      print('Plaintext length: ${plaintext.length} characters');
-      print('Ciphertext length: ${ciphertext.length} bytes');
-      print('IV length: ${iv.length} bytes (${iv.length * 8} bits)');
-      print('═══════════════════════════════════════════════════════════\n');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         🔐  AES-256-CBC ENCRYPTION PROCESS                       ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  📝 INPUT:');
+      print(
+        '     Plaintext: "${plaintext.length > 50 ? plaintext.substring(0, 50) + '...' : plaintext}"',
+      );
+      print('     Length: ${plaintext.length} characters');
+      print('\n  🔑 ENCRYPTION PARAMETERS:');
+      print('     Algorithm: AES-256-CBC');
+      print(
+        '     Key (Base64): ${aesKeyBase64.length > 40 ? aesKeyBase64.substring(0, 40) + '...' : aesKeyBase64}',
+      );
+      print('     IV (Base64):  $ivBase64');
+      print('     IV Length: ${iv.length} bytes (${iv.length * 8} bits)');
+      print('\n  🔒 OUTPUT:');
+      print(
+        '     Ciphertext: ${ciphertextBase64.length > 60 ? ciphertextBase64.substring(0, 60) + '...' : ciphertextBase64}',
+      );
+      print('     Length: ${ciphertext.length} bytes');
+      print('\n  ✓ Encryption completed successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return {'ciphertext': ciphertextBase64, 'iv': ivBase64};
     } catch (e) {
@@ -276,17 +336,35 @@ class EncryptionService {
       );
 
       // DEBUG: Show decryption details
-      print('═══════════════════════════════════════════════════════════');
-      print('🔓 DEBUG: AES-256-CBC DECRYPTION');
-      print('═══════════════════════════════════════════════════════════');
-      print('🔒 Ciphertext (Base64): $ciphertextBase64');
-      print('🔑 AES Key (Base64): $aesKeyBase64');
-      print('🎲 IV (Base64): $ivBase64');
-      print('📝 Decrypted Plaintext: "$plaintext"');
-      print('───────────────────────────────────────────────────────────');
-      print('Ciphertext length: ${ciphertext.length} bytes');
-      print('Decrypted length: ${plaintext.length} characters');
-      print('═══════════════════════════════════════════════════════════\n');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         🔓  AES-256-CBC DECRYPTION PROCESS                       ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  🔒 INPUT:');
+      print(
+        '     Ciphertext: ${ciphertextBase64.length > 60 ? ciphertextBase64.substring(0, 60) + '...' : ciphertextBase64}',
+      );
+      print('     Length: ${ciphertext.length} bytes');
+      print('\n  🔑 DECRYPTION PARAMETERS:');
+      print('     Algorithm: AES-256-CBC');
+      print(
+        '     Key (Base64): ${aesKeyBase64.length > 40 ? aesKeyBase64.substring(0, 40) + '...' : aesKeyBase64}',
+      );
+      print('     IV (Base64):  $ivBase64');
+      print('\n  📝 OUTPUT:');
+      print(
+        '     Plaintext: "${plaintext.length > 50 ? plaintext.substring(0, 50) + '...' : plaintext}"',
+      );
+      print('     Length: ${plaintext.length} characters');
+      print('\n  ✓ Decryption completed successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return plaintext;
     } catch (e) {
@@ -326,17 +404,37 @@ class EncryptionService {
       print('[EncryptionService] Message signed successfully');
 
       // DEBUG: Show signature details
-      print('═══════════════════════════════════════════════════════════');
-      print('✍️  DEBUG: RSA DIGITAL SIGNATURE');
-      print('═══════════════════════════════════════════════════════════');
-      print('📝 Message: "$message"');
-      print('🔐 Message Hash (SHA-256): ${base64.encode(hash)}');
-      print('✍️  Signature (Base64): $signatureBase64');
-      print('───────────────────────────────────────────────────────────');
-      print('Message length: ${message.length} characters');
-      print('Hash length: ${hash.length} bytes (${hash.length * 8} bits)');
-      print('Signature length: ${signature.bytes.length} bytes');
-      print('═══════════════════════════════════════════════════════════\n');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         ✍️   RSA DIGITAL SIGNATURE CREATION                       ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  📝 MESSAGE:');
+      print(
+        '     "${message.length > 50 ? message.substring(0, 50) + '...' : message}"',
+      );
+      print('     Length: ${message.length} characters');
+      final hashBase64 = base64.encode(hash);
+      print('\n  🔐 HASHING:');
+      print('     Algorithm: SHA-256');
+      print(
+        '     Hash: ${hashBase64.length > 40 ? hashBase64.substring(0, 40) + '...' : hashBase64}',
+      );
+      print('     Hash Length: ${hash.length} bytes (${hash.length * 8} bits)');
+      print('\n  ✍️  SIGNING:');
+      print('     Algorithm: RSA-2048 with SHA-256');
+      print(
+        '     Signature: ${signatureBase64.length > 60 ? signatureBase64.substring(0, 60) + '...' : signatureBase64}',
+      );
+      print('     Length: ${signature.bytes.length} bytes');
+      print('\n  ✓ Digital signature created successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return signatureBase64;
     } catch (e) {

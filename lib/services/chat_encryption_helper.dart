@@ -18,22 +18,40 @@ class ChatEncryptionHelper {
     required String password,
   }) async {
     try {
-      print('[ChatHelper] Starting registration for: $username');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         👤  USER REGISTRATION PROCESS                            ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print('  Username: $username\n');
 
       // 1. Generate RSA key pair
+      print('  [1/3] Generating RSA key pair...');
       final keyPair = _encryptionService.generateRSAKeyPair();
       final publicKey = keyPair['publicKey']!;
       final privateKey = keyPair['privateKey']!;
 
       // 2. Save private key securely
+      print('  [2/3] Saving keys to secure storage...');
       await _storageService.savePrivateKey(privateKey, username: username);
       await _storageService.savePublicKey(publicKey);
       await _storageService.saveUsername(username);
+      print('      ✓ Private key saved securely');
+      print('      ✓ Public key cached');
 
       // 3. Hash password
+      print('  [3/3] Hashing password with SHA-256...');
       final passwordHash = _encryptionService.hashPassword(password);
+      print('      ✓ Password hashed');
 
-      print('[ChatHelper] ✓ Registration completed successfully');
+      print('\n  ✅ Registration completed successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       // Return data untuk dikirim ke server
       return {
@@ -68,21 +86,42 @@ class ChatEncryptionHelper {
     required String receiverPublicKey,
   }) async {
     try {
-      print('[ChatHelper] Starting chat session: $chatId');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         🔐  CHAT SESSION KEY EXCHANGE                            ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print(
+        '  Session ID: ${chatId.length > 30 ? chatId.substring(0, 30) + '...' : chatId}\n',
+      );
 
       // 1. Generate AES session key
+      print('  [1/3] Generating AES-256 session key...');
       final sessionKey = _encryptionService.generateAESKey();
 
       // 2. Encrypt session key dengan receiver's public key
+      print(
+        '  [2/3] Encrypting session key with receiver\'s RSA public key...',
+      );
       final encryptedSessionKey = _encryptionService.encryptRSA(
         sessionKey,
         receiverPublicKey,
       );
+      print('      ✓ Session key encrypted');
 
       // 3. Save session key locally
+      print('  [3/3] Saving session key to local storage...');
       await _storageService.saveSessionKey(chatId, sessionKey);
+      print('      ✓ Session key saved');
 
-      print('[ChatHelper] ✓ Chat session started successfully');
+      print('\n  ✅ Chat session initialized successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       // Return encrypted session key untuk dikirim ke server
       return encryptedSessionKey;
@@ -140,29 +179,49 @@ class ChatEncryptionHelper {
     required String message,
   }) async {
     try {
-      print('[ChatHelper] Preparing message to send...');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         📤  PREPARING MESSAGE TO SEND                            ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print(
+        '  Message: "${message.length > 50 ? message.substring(0, 50) + '...' : message}"\n',
+      );
 
       // 1. Load session key
+      print('  [1/4] Loading session key from storage...');
       final sessionKey = await _storageService.loadSessionKey(chatId);
       if (sessionKey == null) {
         throw Exception('Session key not found for chat: $chatId');
       }
+      print('      ✓ Session key loaded');
 
       // 2. Load private key untuk signing
+      print('  [2/4] Loading private key for signing...');
       final privateKey = await _storageService.loadPrivateKey();
       if (privateKey == null) {
         throw Exception('Private key not found');
       }
+      print('      ✓ Private key loaded');
 
       // 3. Encrypt message
+      print('  [3/4] Encrypting message with AES-256-CBC...');
       final encrypted = _encryptionService.encryptAES(message, sessionKey);
       final ciphertext = encrypted['ciphertext']!;
       final iv = encrypted['iv']!;
 
       // 4. Sign message
+      print('  [4/4] Creating digital signature...');
       final signature = _encryptionService.signMessage(message, privateKey);
 
-      print('[ChatHelper] ✓ Message prepared successfully');
+      print('\n  ✅ Message ready to send');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       // Return data untuk dikirim ke server
       return {'ciphertext': ciphertext, 'iv': iv, 'signature': signature};
@@ -186,15 +245,26 @@ class ChatEncryptionHelper {
     required String senderPublicKey,
   }) async {
     try {
-      print('[ChatHelper] Processing received message...');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         📥  PROCESSING RECEIVED MESSAGE                          ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       // 1. Load session key
+      print('  [1/3] Loading session key from storage...');
       final sessionKey = await _storageService.loadSessionKey(chatId);
       if (sessionKey == null) {
         throw Exception('Session key not found for chat: $chatId');
       }
+      print('      ✓ Session key loaded');
 
       // 2. Decrypt message
+      print('  [2/3] Decrypting message with AES-256-CBC...');
       final plaintext = _encryptionService.decryptAES(
         ciphertext,
         sessionKey,
@@ -202,13 +272,22 @@ class ChatEncryptionHelper {
       );
 
       // 3. Verify signature
+      print('  [3/3] Verifying digital signature...');
       final isSignatureValid = _encryptionService.verifySignature(
         plaintext,
         signature,
         senderPublicKey,
       );
+      if (isSignatureValid) {
+        print('      ✅ Signature VALID - Message is authentic');
+      } else {
+        print('      ⚠️  Signature INVALID - Message may be tampered!');
+      }
 
-      print('[ChatHelper] ✓ Message processed successfully');
+      print('\n  ✅ Message processing completed');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
 
       return DecryptedMessage(
         message: plaintext,
