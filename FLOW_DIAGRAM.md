@@ -51,7 +51,7 @@
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│         PHASE 2: KEY EXCHANGE (Otomatis saat buka chat pertama kali)        │
+│                    PHASE 2: KEY EXCHANGE (Start Chat)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 
     ALICE (Initiator)                FIREBASE FIRESTORE           BOB (Receiver)
@@ -61,7 +61,7 @@
          │     (tap user "Bob" di contacts)
          │
          │  2. Generate Session ID (deterministic)
-         │     sessionId = hash(sort([alice_id, bob_id]))
+         │     sessionId = sort([alice_id, bob_id]).join("_")
          │     = "abc123_xyz789"
          │
          │  3. Check local storage
@@ -72,53 +72,73 @@
          │     [32 random bytes]
          │     sessionKey = "rT8kP2mN..."
          │
-         │  5. Save Session Key LOCALLY
+         │  5. Get Bob's Public Key
+         ├────────────────────>
+         │   Query: /users/{bob_id}    6. Return Bob's public key
+         │<────────────────────
+         │   { publicKey: "-----BEGIN RSA..." }
+         │
+         │  7. Encrypt Session Key (RSA)
+         │     RSA_Encrypt(sessionKey, bob_public_key)
+         │     = encryptedSessionKey = "aH8j2K..."
+         │
+         │  8. Save Session Key LOCALLY
          │     flutter_secure_storage.save(
          │       "session_abc123_xyz789",
-         │       sessionKey
+         │       sessionKey  ← Original, not encrypted!
          │     )
          │     ✓ Stored on device
-         │     ✗ NOT sent to Firebase!
          │
-         │  6. Create Chat Session Metadata
+         │  9. Send Encrypted Session Key to Firestore
          ├────────────────────>
-         │   Firestore: /chatSessions    7. Store metadata
-         │   {                               (NO session key!)
-         │     sessionId: "abc123_xyz789",   ✓ sessionId
-         │     participants: [alice_id, bob_id],  ✓ participants
-         │     createdAt: timestamp,         ✓ timestamps
+         │   /chatSessions              10. Store encrypted session key
+         │   {                               ✓ encryptedSessionKey (RSA encrypted!)
+         │     sessionId: "abc123_xyz789",   ✓ participants
+         │     participants: [alice_id, bob_id],  ✓ timestamps
+         │     encryptedSessionKey: "aH8j2K...",
+         │     createdAt: timestamp,
          │     lastMessageAt: timestamp
          │   }                          │
          │                              │
-    ✓ Session ready (Alice)           │        [Bob opens chat later...]
+    ✓ Alice session ready             │        [Bob opens chat later...]
                                        │                    │
-                                       │                    │  8. Bob opens chat
-                                       │                    │     with Alice
+                                       │                    │  11. Bob opens chat with Alice
                                        │                    │
-                                       │                    │  9. Generate SAME Session ID
-                                       │                    │     (deterministic algorithm)
-                                       │                    │     = "abc123_xyz789"
+                                       │                    │  12. Generate SAME Session ID
+                                       │                    │      (deterministic algorithm)
+                                       │                    │      = "abc123_xyz789"
                                        │                    │
-                                       │                    │  10. Check local storage
+                                       │                    │  13. Check local storage
                                        │                    │      hasSessionKey?
                                        │                    │      → NO
                                        │                    │
-                                       │                    │  11. Generate AES-256 Key
-                                       │                    │      [32 random bytes]
-                                       │                    │      sessionKey = "pL9x..."
+                                       │                    │  14. Get Encrypted Session Key
+                                       │                    ├─────────────>
+                                       │                    │   Query: /chatSessions
+                                       │                    │   where sessionId == "abc123..."
+                                       │               15. Return encrypted key
+                                       │                    │<─────────────
+                                       │                    │   { encryptedSessionKey: "aH8j2K..." }
                                        │                    │
-                                       │                    │  12. Save LOCALLY
+                                       │                    │  16. Load Private Key
+                                       │                    │      (from secure storage)
+                                       │                    │      bob_private_key
+                                       │                    │
+                                       │                    │  17. Decrypt Session Key (RSA)
+                                       │                    │      RSA_Decrypt(encryptedSessionKey, bob_private_key)
+                                       │                    │      = sessionKey = "rT8kP2mN..."
+                                       │                    │
+                                       │                    │  18. Save Session Key LOCALLY
                                        │                    │      ✓ Stored on device
-                                       │                    │      ✗ NOT sent!
                                        │                    │
-                                       │                    ✓ Session ready (Bob)
+                                       │                    ✓ Bob session ready
 
     PENTING:
-    ✓ Setiap user punya session key SENDIRI di device masing-masing
-    ✓ Session keys BERBEDA antara Alice & Bob
-    ✓ Session keys TIDAK pernah dikirim melalui network
-    ✓ Messages di-encrypt dengan session key masing-masing user
-    ✓ Firestore hanya simpan ENCRYPTED messages, bukan session keys
+    ✅ Alice & Bob punya session key SAMA ("rT8kP2mN...")
+    ✅ Session key di-encrypt dengan RSA sebelum dikirim
+    ✅ Hanya Bob yang bisa decrypt (dengan private key-nya)
+    ✅ Firestore simpan encrypted session key (tidak bisa dibaca server)
+    ✅ After decryption, both dapat encrypt/decrypt messages
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -319,35 +339,37 @@
     │                      │                   │ sessionId            │
     │ session_key_abc123   │                   │ senderId             │
     │ [Per Chat]           │                   │ receiverId           │
-    │ ✓ AES-256 Keys       │                   │ ciphertext ← ENCRYPTED!
-    │ ✗ NEVER synced!      │                   │ iv                   │
-    │                      │                   │ signature            │
+    │ ✓ AES-256 Key        │                   │ ciphertext ← ENCRYPTED!
+    │ = "rT8kP2mN..."      │                   │ iv                   │
+    │ ✗ NOT encrypted!     │                   │ signature            │
     └──────────────────────┘                   │ timestamp            │
                                                │ isDelivered          │
     ✅ Private keys stored locally             │ isRead               │
-    ✅ Hardware-backed encryption              └──────────────────────┘
-    ✅ Android Keystore / iOS Keychain
-    ✅ Biometric protection available          /users/{bob_id}/unreadCounts/{alice_id}
-    ⛔ NEVER leaves device!                    ──────────────────────────────────────
-                                               ┌──────────────────────┐
-                                               │ count                │
+    ✅ Session keys decrypted & stored         └──────────────────────┘
+    ✅ Hardware-backed encryption
+    ✅ Android Keystore / iOS Keychain         /chatSessions/{docId}
+    ✅ Biometric protection available          ───────────────────────
+    ⛔ Private key NEVER leaves device!        ┌──────────────────────┐
                                                │ sessionId            │
-    BOB's DEVICE (Similar Structure)           │ lastMessageAt        │
-    ────────────────────────────               └──────────────────────┘
-    Secure Storage
-    ┌──────────────────────┐                   /chatSessions/{sessionId}
-    │ bob_private_key      │                   ────────────────────────
-    │ bob_public_key       │                   ┌──────────────────────┐
-    │ session_key_abc123   │                   │ sessionId            │
-    │ (DIFFERENT key!)     │                   │ participants[]       │
-    └──────────────────────┘                   │ createdAt            │
+                                               │ participants[]       │
+    BOB's DEVICE (Similar Structure)           │ encryptedSessionKey  │ ← RSA encrypted!
+    ────────────────────────────               │ createdAt            │
+    Secure Storage                             │ lastMessageAt        │
+    ┌──────────────────────┐                   └──────────────────────┘
+    │ bob_private_key      │
+    │ bob_public_key       │                   /users/{bob_id}/unreadCounts/{alice_id}
+    │ session_key_abc123   │                   ──────────────────────────────────────
+    │ = "rT8kP2mN..."      │                   ┌──────────────────────┐
+    │ (SAME as Alice!)     │                   │ count                │
+    └──────────────────────┘                   │ sessionId            │
                                                │ lastMessageAt        │
-    ⚠️  Alice & Bob have DIFFERENT              └──────────────────────┘
-        session keys in their devices!
-    ⚠️  Both can decrypt messages because        ✅ Firestore: Zero-knowledge storage
-        they use their own keys                  ✅ Cannot decrypt messages
-    ✅ End-to-End Encryption maintained!         ✅ Only stores encrypted data
-                                                 ✅ Real-time sync & streams
+    ✅ Alice & Bob have SAME                    └──────────────────────┘
+       session key after decryption!
+    ✅ Session key encrypted with RSA          ✅ Firestore: Zero-knowledge storage
+       before transmission                      ✅ Stores encrypted session key (RSA)
+    ✅ Only Bob can decrypt with his            ✅ Stores encrypted messages (AES)
+       private key                              ✅ Cannot decrypt either!
+    ✅ True End-to-End Encryption!              ✅ Real-time sync & streams
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -412,11 +434,13 @@
 
 ## 📝 Notes
 
-- **Private keys**: NEVER leave the device
-- **Session keys**: Encrypted with RSA before transmission
+- **Private keys**: NEVER leave the device (stored in secure storage)
+- **Session keys**: Generated by Alice, encrypted with RSA, sent to Firestore
+- **Bob decrypts**: Uses his private key to decrypt the session key
+- **Same session key**: Alice & Bob use the same AES key after key exchange
 - **IV (Initialization Vector)**: Random 16 bytes per message
-- **Signatures**: Prove authenticity & detect tampering
-- **Server**: Stores only encrypted data (zero-knowledge)
+- **Signatures**: Prove authenticity & detect tampering with RSA private key
+- **Firestore**: Stores encrypted session key (RSA) + encrypted messages (AES)
 
 ## 🔒 Security Level
 
