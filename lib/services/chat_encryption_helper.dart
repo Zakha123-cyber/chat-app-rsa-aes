@@ -138,24 +138,44 @@ class ChatEncryptionHelper {
     required String encryptedSessionKey,
   }) async {
     try {
-      print('[ChatHelper] Accepting chat session: $chatId');
+      print(
+        '\n╔═══════════════════════════════════════════════════════════════════╗',
+      );
+      print(
+        '║         🔓  ACCEPTING CHAT SESSION (Receiver)                    ║',
+      );
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝',
+      );
+      print(
+        '  Session ID: ${chatId.length > 30 ? chatId.substring(0, 30) + '...' : chatId}\n',
+      );
 
       // 1. Load private key
+      print('  [1/3] Loading private key from secure storage...');
       final privateKey = await _storageService.loadPrivateKey();
       if (privateKey == null) {
         throw Exception('Private key not found. Please register first.');
       }
+      print('      ✓ Private key loaded');
 
-      // 2. Decrypt session key
+      // 2. Decrypt session key dengan RSA private key
+      print('  [2/3] Decrypting session key with RSA private key...');
       final sessionKey = _encryptionService.decryptRSA(
         encryptedSessionKey,
         privateKey,
       );
+      print('      ✓ Session key decrypted');
 
       // 3. Save session key locally
+      print('  [3/3] Saving decrypted session key to local storage...');
       await _storageService.saveSessionKey(chatId, sessionKey);
+      print('      ✓ Session key saved');
 
-      print('[ChatHelper] ✓ Chat session accepted successfully');
+      print('\n  ✅ Chat session accepted successfully');
+      print(
+        '╚═══════════════════════════════════════════════════════════════════╝\n',
+      );
     } catch (e) {
       print('[ChatHelper] ✗ Failed to accept chat session: $e');
       rethrow;

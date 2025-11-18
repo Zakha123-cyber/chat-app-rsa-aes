@@ -94,26 +94,49 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         // KEY EXCHANGE PROTOCOL
         print('[ChatScreen] Step 5a: Starting new key exchange...');
 
-        // Generate AES session key and encrypt it with receiver's RSA public key
-        print('[ChatScreen] - Generating AES session key...');
-        await _chatHelper.startChatSession(
-          chatId: _sessionId,
-          receiverPublicKey: widget.receiverPublicKey,
-        );
-        print('[ChatScreen] ✓ Session key generated');
+        // Check if session exists in Firestore (Bob's case)
+        print('[ChatScreen] - Checking Firestore for existing session...');
+        final encryptedKeyFromFirestore = await _dbService
+            .getEncryptedSessionKey(_sessionId);
 
-        // Store session metadata in Firestore (actual encrypted key is stored locally)
-        print('[ChatScreen] - Creating chat session in Firestore...');
-        await _dbService.createChatSession(
-          receiverId: widget.receiverId,
-          encryptedSessionKey:
-              'session_key_encrypted_$_sessionId', // Placeholder for now
-        );
-        print('[ChatScreen] ✓ Chat session created in Firestore');
+        if (encryptedKeyFromFirestore != null) {
+          // BOB'S FLOW: Decrypt session key from Firestore
+          print('[ChatScreen] - Found encrypted session key in Firestore');
+          print('[ChatScreen] - Decrypting session key with private key...');
+
+          await _chatHelper.acceptChatSession(
+            chatId: _sessionId,
+            encryptedSessionKey: encryptedKeyFromFirestore,
+          );
+
+          print('[ChatScreen] ✓ Session key decrypted and saved');
+        } else {
+          // ALICE'S FLOW: Generate and encrypt session key
+          print('[ChatScreen] - No session in Firestore, creating new one...');
+          print('[ChatScreen] - Generating AES session key...');
+
+          final encryptedSessionKey = await _chatHelper.startChatSession(
+            chatId: _sessionId,
+            receiverPublicKey: widget.receiverPublicKey,
+          );
+
+          print('[ChatScreen] ✓ Session key generated and encrypted');
+
+          // Store session with ACTUAL encrypted key in Firestore
+          print('[ChatScreen] - Sending encrypted session key to Firestore...');
+          await _dbService.createChatSession(
+            receiverId: widget.receiverId,
+            encryptedSessionKey: encryptedSessionKey, // Real encrypted key!
+          );
+
+          print('[ChatScreen] ✓ Encrypted session key stored in Firestore');
+        }
 
         print('[ChatScreen] ✓ Key exchange completed');
       } else {
-        print('[ChatScreen] Step 5b: Session key already exists');
+        print(
+          '[ChatScreen] Step 5b: Session key already exists in local storage',
+        );
       }
 
       // Reset unread count from this sender (best effort - don't fail if error)
